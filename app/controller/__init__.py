@@ -1,29 +1,11 @@
-from flask import Flask
-from flask_restful import reqparse, abort, Api, Resource
-from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, fields, marshal_with
-
-import os
-
-dbdir = "sqlite:///" + os.path.abspath(os.getcwd()) + "/database.db"
-
-app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = dbdir
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-db = SQLAlchemy(app)
-api = Api(app)
-
-
-class Users(db.Model):
-	id = db.Column(db.Integer, primary_key=True)
-	username = db.Column(db.String(50), unique=True, nullable=False)
-	password = db.Column(db.String(80), nullable=False)
-
+from flask_restful import reqparse, abort
+from app import db, api
+from app.models.users import Users
 
 parser = reqparse.RequestParser()
 parser.add_argument('username')
 parser.add_argument('password')
-
 
 user_fields = {
 	'id' : fields.Integer,
@@ -31,17 +13,18 @@ user_fields = {
 	'password' : fields.String,
 }
 
+class Login(Resource):
+	@marshal_with(user_fields, envelope='user')
+	def get(self, username, password):
+		print(username)
+		user = Users.query.filter_by(username=username, password=password).first()
+		return user
 
 class User(Resource):
 	@marshal_with(user_fields, envelope='user')
 	def get(self, idUser):
 		user = Users.query.filter_by(id=idUser).first()
-		return user
-
-	@marshal_with(user_fields, envelope='user')
-	def get(self, username, password):
-		print(username)
-		user = Users.query.filter_by(username=username, password=password).first()
+		print(user)
 		return user
 
 	def delete(self, idUser):
@@ -78,8 +61,5 @@ class UsersList(Resource):
 		return new_user, 201
 
 api.add_resource(UsersList, '/users')
-api.add_resource(User, '/users/<idUser>', '/users/<username>/<password>')
-
-if __name__ == '__main__':
-    db.create_all()
-    app.run(debug=True)
+api.add_resource(User, '/users/<int:idUser>')
+api.add_resource(Login, '/users/login/<username>/<password>')
