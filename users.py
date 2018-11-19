@@ -2,7 +2,7 @@ from flask import Flask
 from flask_restful import reqparse, abort, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, fields, marshal_with
-
+from datetime import datetime
 import os
 
 dbdir = "sqlite:///" + os.path.abspath(os.getcwd()) + "/database.db"
@@ -34,10 +34,10 @@ class Usuariotrabajador(db.Model):
 
 class Historialasistencia(db.Model):
 	id = db.Column(db.Integer, primary_key=True)
-	fecha = db.Column(db.String(45), nullable=False)
 	horallegada = db.Column(db.DateTime, nullable=False)
+	minutostardanza = db.Column(db.Integer, nullable=False)
 	usuariotrabajador_id = db.Column(db.Integer, db.ForeignKey('trabajador.id'))
-
+	
 
 parser = reqparse.RequestParser()
 parser.add_argument('username')
@@ -53,6 +53,9 @@ parserUsuarioTrabajador.add_argument('correo')
 parserUsuarioTrabajador.add_argument('usuario')
 parserUsuarioTrabajador.add_argument('password')
 
+parserHistorialAsistencia = reqparse.RequestParser()
+parserHistorialAsistencia.add_argument('dni')
+
 
 user_fields = {
 	'id' : fields.Integer,
@@ -61,7 +64,7 @@ user_fields = {
 }
 
 usuariotrabajador_fields = {
-	'idTrabajador' : fields.Integer,
+	'id' : fields.Integer,
 	'nombre' : fields.String,
 	'dni' : fields.String,
 	'salario' : fields.String,
@@ -75,24 +78,38 @@ usuariotrabajador_fields = {
 class UsuarioTrabajador(Resource):
 	@marshal_with(usuariotrabajador_fields, envelope='UsuarioTrabajador')
 	def get(self, dni):
-		usuariotrabajador = UsuarioTrabajador.query.filter_by(dni=dni).first()
+		usuariotrabajador = Usuariotrabajador.query.filter_by(dni=dni).first()
 		return usuariotrabajador
 
 class UsuarioTrabajadorList(Resource):
 	@marshal_with(usuariotrabajador_fields, envelope='UsuariosTrabajadores')
 	def get(self, **kwargs):
-		return UsuarioTrabajador.query.all()
+		return Usuariotrabajador.query.all()
 
 	@marshal_with(usuariotrabajador_fields, envelope='UsuarioTrabajador')
-	def post():
+	def post(self):
 		args = parserUsuarioTrabajador.parse_args()
-		new_usuariotrabajador = UsuarioTrabajador(nombre=args['nombre'], dni=args['dni'], salario=args['salario'], 
-			telefono=args['telefono'], correo=args['correo'], usuario=args['usuario'], password=args['password'])
+		print(args)
+		new_usuariotrabajador = Usuariotrabajador(nombre=args['nombre'], dni=args['dni'], salario=args['salario'], telefono=args['telefono'], correo=args['correo'], usuario=args['usuario'], password=args['password'])
 		db.session.add(new_usuariotrabajador)
 		db.session.commit()
 		return new_usuariotrabajador, 201
 
 
+class HistorialAsistencia(Resource):
+	def post(self):
+		args = parserHistorialAsistencia.parse_args()
+		usuariotrabajador = Usuariotrabajador.query.filter_by(dni=args['dni']).first()
+		print(usuariotrabajador)
+		horallegada = datetime.now()
+		tardanza = MinutosdeTardanza(horallegada)
+		historialasistencia = Historialasistencia(horallegada=horallegada, minutostardanza=tardanza, usuariotrabajador_id=usuariotrabajador.id)
+		print(historialasistencia)
+		db.session.add(historialasistencia)
+		db.session.commit()
+		return tardanza, 200
+
+# APIS CON FORMATO DE GUIA
 
 class Login(Resource):
 	@marshal_with(user_fields, envelope='user')
@@ -141,11 +158,34 @@ class UsersList(Resource):
 		db.session.commit()
 		return new_user, 201
 
+#Funciones adicionales
+
+def MinutosdeTardanza(llegada):
+	horallegada = datetime.now()
+	horaentrada = horallegada.replace(hour=9, minute=0, second=0)
+	diferencia = horallegada - horaentrada
+
+	days, seconds = diferencia.days, diferencia.seconds
+	hours = days * 24 + seconds // 3600
+	minutes = (seconds % 3600) // 60
+	seconds = seconds % 60
+
+	if horallegada > horaentrada:
+		#print("El empleado llego: " + str(hours) +" hora(s) " + "y " + str(minutes) + " minuto(s) tarde")
+		return (hours*60 + minutes)
+	else:
+		return 0
+
+
+
 api.add_resource(UsersList, '/users')
 api.add_resource(User, '/users/<idUser>')
 api.add_resource(Login, '/users/login/<username>/<password>')
+
+
 api.add_resource(UsuarioTrabajadorList, '/usuariotrabajador')
 api.add_resource(UsuarioTrabajador, '/usuariotrabajador/<dni>')
+api.add_resource(HistorialAsistencia, '/asistencia')
 
 if __name__ == '__main__':
     db.create_all()
